@@ -19,7 +19,7 @@ if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535)
     process.exit(1);
 }
 
-function get(filePath, res, req) {
+function getFile(res, filePath) {
     fs.promises.readFile(filePath) 
         .then((data) => {
             res.writeHead(200, { 'Content-Type': 'image/jpeg' });
@@ -31,7 +31,7 @@ function get(filePath, res, req) {
         });
 }
 
-function put(filePath, res, req) {
+function putFile(res, filePath, req) {
     const chunks = [];
     req.on('data', (chunk) => {
         chunks.push(chunk);
@@ -66,14 +66,32 @@ function put(filePath, res, req) {
     });
 } 
 
-function defaultResponse(filePath, res, req) {
+function deleteFile(res, filePath) {
+  fs.promises.unlink(filePath)
+      .then(() => {
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.end('File deleted successfully');
+      })
+      .catch((error) => {
+          if (error.code === 'ENOENT') {
+              res.writeHead(404, { 'Content-Type': 'text/plain' });
+              res.end('File not found');
+          } else {
+              res.writeHead(500, { 'Content-Type': 'text/plain' });
+              res.end('Error deleting file');
+          }
+      });
+}
+
+function defaultResponse(res) {
     res.writeHead(405, { 'Content-Type': 'text/plain' });
     res.end('Method Not Allowed\n');
 }
 
 const methods = {
-    GET: get,
-    PUT: put,
+    GET: getFile,
+    PUT: putFile,
+    DELETE: deleteFile,
     default: defaultResponse
 };
 
@@ -85,7 +103,7 @@ const server = http.createServer((req, res) => {
   } else {
     const statusCode = urlParts[0];
     const filePath = path.join(options.cache, `${statusCode}.jpg`);
-    (methods[req.method] || methods.default)(filePath, res, req);
+    (methods[req.method] || methods.default)(res, filePath, req);
   }
 });
 
