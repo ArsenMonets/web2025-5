@@ -1,5 +1,7 @@
 const http = require('http');
 const { Command } = require('commander');
+const fs = require('fs');
+const path = require('path');
 
 const program = new Command();
 
@@ -17,9 +19,38 @@ if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535)
     process.exit(1);
 }
 
+function get(filePath, res) {
+    fs.promises.readFile(filePath) 
+        .then((data) => {
+            res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+            res.end(data); 
+        })
+        .catch((error) => {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('File not found');
+        });
+}
+
+function defaultResponse(filePath, res) {
+    res.writeHead(405, { 'Content-Type': 'text/plain' });
+    res.end('Method Not Allowed\n');
+}
+
+const methods = {
+    GET: get,
+    default: defaultResponse
+};
+
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Server is running!\n');
+  const urlParts = req.url.split('/').filter(Boolean);
+  if (urlParts.length != 1) {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    res.end('You should specify a valid path');
+  } else {
+    const statusCode = urlParts[0];
+    const filePath = path.join(options.cache, `${statusCode}.jpg`);
+    (methods[req.method] || methods.default)(filePath, res);
+  }
 });
 
 server.listen(options.port, options.host, () => {
