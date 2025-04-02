@@ -19,7 +19,7 @@ if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535)
     process.exit(1);
 }
 
-function get(filePath, res) {
+function get(filePath, res, req) {
     fs.promises.readFile(filePath) 
         .then((data) => {
             res.writeHead(200, { 'Content-Type': 'image/jpeg' });
@@ -31,13 +31,49 @@ function get(filePath, res) {
         });
 }
 
-function defaultResponse(filePath, res) {
+function put(filePath, res, req) {
+    const chunks = [];
+    req.on('data', (chunk) => {
+        chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+        const MAX_FILE_SIZE = 5 * 1024 * 1024; 
+        const data = Buffer.concat(chunks);
+        if (Buffer.byteLength(data) > MAX_FILE_SIZE) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('File size exceeds the maximum limit of 5MB');
+            return;
+        }
+        const directory = path.dirname(filePath);
+        fs.promises.mkdir(directory, { recursive: true })
+            .then(() => {
+                return fs.promises.writeFile(filePath, data);
+            })
+            .then(() => {
+                res.writeHead(201, { 'Content-Type': 'text/plain' });
+                res.end('File updated successfully');
+            })
+            .catch((error) => {
+                res.writeHead(500, { 'Content-Type': 'text/plain' });
+                res.end('Error updating file');
+            });
+    });
+
+    req.on('error', (error) => {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Error receiving data');
+    });
+} 
+
+function defaultResponse(filePath, res, req) {
     res.writeHead(405, { 'Content-Type': 'text/plain' });
     res.end('Method Not Allowed\n');
 }
 
 const methods = {
     GET: get,
+    PUT: put,
     default: defaultResponse
 };
 
@@ -49,7 +85,7 @@ const server = http.createServer((req, res) => {
   } else {
     const statusCode = urlParts[0];
     const filePath = path.join(options.cache, `${statusCode}.jpg`);
-    (methods[req.method] || methods.default)(filePath, res);
+    (methods[req.method] || methods.default)(filePath, res, req);
   }
 });
 
