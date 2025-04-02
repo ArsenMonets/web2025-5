@@ -2,6 +2,7 @@ const http = require('http');
 const { Command } = require('commander');
 const fs = require('fs');
 const path = require('path');
+const superagent = require('superagent');
 
 const program = new Command();
 
@@ -19,17 +20,38 @@ if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535)
     process.exit(1);
 }
 
-function getFile(res, filePath) {
-    fs.promises.readFile(filePath) 
-        .then((data) => {
-            res.writeHead(200, { 'Content-Type': 'image/jpeg' });
-            res.end(data); 
-        })
-        .catch((error) => {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('File not found');
-        });
+async function getFile(res, filePath, req, statusCode) {
+  const cacheFilePath = path.join(__dirname, 'cache', `${statusCode}.jpg`);
+  const readFile = async () => {
+      try {
+          const data = await fs.promises.readFile(filePath);
+          res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+          res.end(data); 
+      } catch (error) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('Unable to read file');
+      }
+  };
+  if (!fs.existsSync(filePath)) {
+      try {
+          const response = await superagent.get(`https://http.cat/${statusCode}`);
+          const imageData = Buffer.from(response.body);
+          await fs.promises.writeFile(cacheFilePath, imageData);
+          await readFile();
+      } catch (error) {
+          if (error.response) {
+              res.writeHead(400, { 'Content-Type': 'text/plain' });
+              res.end('File not found');
+          } else {
+              res.writeHead(500, { 'Content-Type': 'text/plain' });
+              res.end('Error saving image to cache');
+          }
+      }
+  } else {
+      await readFile();
+  }
 }
+
 
 function putFile(res, filePath, req) {
     const chunks = [];
@@ -103,7 +125,7 @@ const server = http.createServer((req, res) => {
   } else {
     const statusCode = urlParts[0];
     const filePath = path.join(options.cache, `${statusCode}.jpg`);
-    (methods[req.method] || methods.default)(res, filePath, req);
+    (methods[req.method] || methods.default)(res, filePath, req, statusCode);
   }
 });
 
